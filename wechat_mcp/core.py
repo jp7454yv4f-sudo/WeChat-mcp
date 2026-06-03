@@ -71,31 +71,37 @@ def _wechat_pid() -> Optional[int]:
 
 
 def _window_rect() -> Optional[tuple[int, int, int, int]]:
-    """
-    通过 osascript 获取微信主窗口位置 (x, y, w, h)。
-    返回 None 表示获取失败。
-    """
-    script = (
-        'tell application "System Events"\n'
-        '    tell process "WeChat"\n'
-        '        set win to first window\n'
-        '        set {x0, y0} to position of win\n'
-        '        set {w0, h0} to size of win\n'
-        '        return (x0 as text) & "," & (y0 as text) & "," & (w0 as text) & "," & (h0 as text)\n'
-        '    end tell\n'
-        'end tell'
-    )
+    """通过 cua-driver list_windows 获取微信主窗口位置 (x, y, w, h)。"""
     try:
-        r = _run(["osascript", "-e", script])
+        r = _run(["cua-driver", "call", "--tool", "list_windows", "--args", "{}"], timeout=10)
         if r.returncode != 0 or not r.stdout.strip():
             return None
-        parts = r.stdout.strip().split(",")
-        if len(parts) != 4:
-            return None
-        return (int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]))
+        data = json.loads(r.stdout)
+        for w in data.get("windows", []):
+            app = w.get("app_name", "")
+            title = w.get("title", "")
+            # 找微信主窗口（最大面积的窗口，排除状态栏弹窗等小窗口）
+            if "微信" in app or "WeChat" in app:
+                b = w.get("bounds", {})
+                area = b.get("width", 0) * b.get("height", 0)
+                # 主窗口面积通常 > 50000px²
+                if area > 50000 and b.get("width", 0) > 400:
+                    x = int(b.get("x", 0))
+                    y = int(b.get("y", 0))
+                    w = int(b.get("width", 0))
+                    h = int(b.get("height", 0))
+                    return (x, y, w, h)
+
+        # 容错：找第一个大面积窗口
+        for w in data.get("windows", []):
+            if "微信" in w.get("app_name", ""):
+                b = w.get("bounds", {})
+                area = b.get("width", 0) * b.get("height", 0)
+                if area > 50000:
+                    return (int(b["x"]), int(b["y"]), int(b["width"]), int(b["height"]))
     except Exception as e:
-        print(f"[WARN] 获取窗口位置失败: {e}", file=sys.stderr)
-        return None
+        print(f"[WARN] cua-driver 获取窗口位置失败: {e}", file=sys.stderr)
+    return None
 
 
 def _session_dir() -> Path:
@@ -137,32 +143,29 @@ def _screenshot_window(path: str | Path) -> bool:
     return _screenshot(path)
 
 
-# ── 键盘事件（cua-driver 优先，osascript 降级） ─────────────────────
+# ── 键盘事件（cua-driver 0.5.0 call API 优先，osascript 降级） ─────
 
 
-def _cua_keyboard(payload: dict) -> bool:
-    """通过 cua-driver 发送键盘事件。"""
+def _cua_call(tool: str, args: dict) -> bool:
+    """通过 cua-driver call API 调用工具。cua-driver 0.5.0+。"""
     pid = _wechat_pid()
     if pid is None:
         return False
-    payload["pid"] = pid
+    args["pid"] = pid
     try:
-        r = _run(
-            ["cua-driver", "keyboard", "--json", json.dumps(payload)],
-            timeout=5,
-        )
+        cmd = ["cua-driver", "call", "--tool", tool, "--args", json.dumps(args)]
+        r = _run(cmd, timeout=5)
         return r.returncode == 0
     except FileNotFoundError:
-        return False  # cua-driver 不存在，由调用方处理降级
+        return False
     except Exception as e:
-        print(f"[WARN] cua-driver 键盘失败: {e}", file=sys.stderr)
+        print(f"[WARN] cua-driver call 失败 ({tool}): {e}", file=sys.stderr)
         return False
 
 
 def _cmd_key(key: str) -> bool:
-    """发送 Cmd+Key 组合键（cua-driver 优先）。"""
-    payload = {"type": "tap", "key": key, "modifiers": ["cmd"]}
-    if _cua_keyboard(payload):
+    """发送 Cmd+Key 组合键（cua-driver → osascript 降级）。"""
+    if _cua_call("hotkey", {"keys": ["cmd", key]}):
         return True
 
     # 降级：osascript
@@ -182,9 +185,8 @@ def _cmd_key(key: str) -> bool:
 
 
 def _tap_key(key: str) -> bool:
-    """发送单键（cua-driver 优先）。"""
-    payload = {"type": "tap", "key": key}
-    if _cua_keyboard(payload):
+    """发送单键（cua-driver → osascript 降级）。"""
+    if _cua_call("press_key", {"key": key}):
         return True
 
     # 降级：osascript
@@ -323,7 +325,12 @@ class WeChatController:
         except Exception:
             pass
 
-        # osascript 激活
+        # cua-driver bring_to_front（不抢焦点）
+        if _cua_call("bring_to_front", {}):
+            time.sleep(0.5)
+            return True
+
+        # 降级：osascript activate
         try:
             r = _run(["osascript", "-e", 'tell application "WeChat" to activate'])
             success = r.returncode == 0
@@ -414,7 +421,7 @@ class WeChatController:
         ocr = _call_qwen_vl(
             verify_path,
             "这张截图是否显示了一个正在进行的聊天窗口（包含消息气泡或对话内容）？"
-            "请只回答「是」或「否」。如果看到的是微信主页面、联系人列表或空页面，回答「否」。",
+            "请只回答「有」或「没有」。如果看到的是微信主页面、联系人列表或空页面，回答「没有」。",
         )
 
         if ocr is None:
@@ -422,7 +429,7 @@ class WeChatController:
             print("[WARN] 无法调用视觉模型验证，假设搜索成功", file=sys.stderr)
             return True
 
-        is_chat = "是" in ocr and "否" not in ocr
+        is_chat = "有" in ocr and "没有" not in ocr
         if not is_chat:
             print(f"[WARN] 搜索联系人 '{name}' 后未检测到聊天窗口（VL: {ocr[:60]}）", file=sys.stderr)
 
@@ -487,13 +494,13 @@ class WeChatController:
 
         ocr = _call_qwen_vl(
             verify_path,
-            f"聊天窗口中是否包含刚刚发送的消息（或其一部分）？消息内容: \"{text[:80]}\"\n"
-            "请只回答「是」或「否」。",
+            "请仔细观察这张截图，看是否包含一条新发送的消息或刚刚的对话内容。"
+            "请只回答「有」或「没有」。",
         )
 
         if ocr is None:
             return True  # 无法调用视觉模型，假设成功
-        if "是" in ocr:
+        if "有" in ocr:
             return True
 
         print(f"[WARN] 消息发送后 VL 验证未通过（VL: {ocr[:60]}）", file=sys.stderr)
@@ -540,12 +547,13 @@ class WeChatController:
         # 调用 Qwen-VL-Plus 读取聊天文字
         result = _call_qwen_vl(
             chat_path,
-            "请仔细阅读这张聊天截图，逐条提取所有聊天内容。\n"
-            "格式要求:\n"
-            "- 每条消息一行：「发送者: 消息内容」\n"
-            "- 保留时间戳（如果有）\n"
-            "- 保持原文语言（中文/英文）\n"
-            "- 不要省略内容",
+            "这是微信聊天窗口截图。请逐条提取所有可见的聊天消息。\n"
+            "格式：发送者: 消息内容\n"
+            "要求：\n"
+            "- 包含时间戳（如果有）\n"
+            "- 保持原文语言\n"
+            "- 从最新消息开始输出\n"
+            "- 尽量完整不要遗漏",
         )
 
         if result is None:

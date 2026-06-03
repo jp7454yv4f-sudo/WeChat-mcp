@@ -27,6 +27,63 @@ logging.basicConfig(
 )
 logger = logging.getLogger("wechat-mcp")
 
+# ── 启动前检查 ──────────────────────────────────────────────────────
+
+def _check_environment() -> list[str]:
+    """检查运行环境是否就绪，返回所有警告信息列表。"""
+    warnings: list[str] = []
+
+    # 1. Python 版本
+    if sys.version_info < (3, 10):
+        warnings.append(f"Python >=3.10 推荐 (当前 {sys.version_info.major}.{sys.version_info.minor})")
+
+    # 2. API Key
+    from wechat_mcp.config import resolve_api_key
+    if not resolve_api_key():
+        warnings.append("DashScope API Key 未配置")
+
+    # 3. cua-driver
+    import shutil
+    if not shutil.which("cua-driver"):
+        warnings.append("cua-driver 未安装，键盘快捷键将降级为 osascript（需要辅助功能权限）")
+    else:
+        try:
+            import subprocess
+            r = subprocess.run(["cua-driver", "status"], capture_output=True, text=True, timeout=5)
+            if r.returncode != 0:
+                warnings.append("cua-driver 守护进程未运行 (运行 cua-driver serve &)")
+        except Exception:
+            warnings.append("cua-driver 状态检查失败")
+
+    # 4. WeChat 进程
+    import subprocess
+    r = subprocess.run(["pgrep", "-x", "WeChat"], capture_output=True, text=True, timeout=5)
+    if r.returncode != 0:
+        warnings.append("微信 (WeChat) 未运行")
+
+    # 5. 依赖
+    missing_deps = []
+    for pkg in ["cv2", "numpy", "requests"]:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing_deps.append(pkg)
+    if missing_deps:
+        warnings.append(f"缺少依赖: {', '.join(missing_deps)}")
+
+    return warnings
+
+
+_checks = _check_environment()
+if _checks:
+    logger.warning("=" * 50)
+    logger.warning("环境检查发现问题:")
+    for w in _checks:
+        logger.warning(f"  ⚠  {w}")
+    logger.warning("=" * 50)
+else:
+    logger.info("环境检查全部通过 ✅")
+
 # ── controller singleton ────────────────────────────────────────────
 _ctrl: Optional[WeChatController] = None
 

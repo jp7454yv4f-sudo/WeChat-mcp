@@ -2,6 +2,7 @@
 name = "wechat-mcp"
 version = "0.1.0"
 description = "MCP Server for WeChat — let AI read and send WeChat messages"
+readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "AGPL-3.0-only"}
 authors = [
@@ -18,9 +19,12 @@ dependencies = [
 homepage = "https://github.com/jp7454yv4f-sudo/WeChat-mcp"
 repository = "https://github.com/jp7454yv4f-sudo/WeChat-mcp"
 
+[project.scripts]
+wechat-mcp = "wechat_mcp.server:main"
+
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["wechat_mcp*"]
