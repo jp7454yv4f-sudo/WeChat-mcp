@@ -29,7 +29,7 @@ AI agents can read and write WeChat messages through the Model Context Protocol 
 ### 1. 安装
 
 ```bash
-pip install wechat-mcp
+pip install wx-mcp-server
 ```
 
 或者从源码安装：

@@ -1,5 +1,5 @@
 [project]
-name = "wechat-mcp"
+name = "wx-mcp-server"
 version = "0.1.0"
 description = "MCP Server for WeChat — let AI read and send WeChat messages"
 readme = "README.md"
