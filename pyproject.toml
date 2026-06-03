@@ -3,7 +3,7 @@ name = "wechat-mcp"
 version = "0.1.0"
 description = "MCP Server for WeChat — let AI read and send WeChat messages"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-only"}
 authors = [
     {name = "Lozzi", email = "jp7454yv4f-sudo@users.noreply.github.com"},
 ]

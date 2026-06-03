@@ -10,7 +10,7 @@ WeChat MCP Core — 微信操作核心模块
   - OpenCV (cv2): 红点检测与图片裁剪
   - requests: 调用 DashScope Qwen-VL-Plus/OCR
 
-API Key: 由 k1+k2+k3+k4 拼接而成
+API Key: 从环境变量 WEIXIN_MCP_API_KEY 或 ~/.wechat_mcp/config.json 读取
 DashScope base: https://dashscope.aliyuncs.com/compatible-mode/v1
 """
 
@@ -29,13 +29,12 @@ import numpy as np
 import requests
 
 # ── API 配置 ──────────────────────────────────────────────────────────
+# 优先从环境变量读取，其次从 ~/.wechat_mcp/config.json 读取
+# 绝不硬编码在源码中
 
-K1 = "sk-7eb8e778"
-K2 = "6e2f4a028b"
-K3 = "1a170eb24e"
-K4 = "4e67"
-DASHSCOPE_API_KEY = K1 + K2 + K3 + K4
-DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+from wechat_mcp.config import resolve_api_key, DASHSCOPE_BASE
+
+DASHSCOPE_API_KEY = resolve_api_key()
 
 # ── 常量 ──────────────────────────────────────────────────────────────
 

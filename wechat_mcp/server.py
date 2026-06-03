@@ -15,12 +15,10 @@ from typing import Optional
 from mcp.server import FastMCP
 from wechat_mcp.core import WeChatController
 
-# ── API key (assembled from parts to avoid detection) ───────────────
-_k1 = bytes.fromhex("736b2d3765623865373738").decode()
-_k2 = "6e2f4a028b"
-_k3 = "1a170eb24e"
-_k4 = "4e67"
-WEIXIN_MCP_API_KEY = _k1 + _k2 + _k3 + _k4
+# ── API key — sourced from environment or config by core.py ────────
+# WEIXIN_MCP_API_KEY is resolved by wechat_mcp.core at import time
+# Set env var: export WEIXIN_MCP_API_KEY=sk-...
+# Or create ~/.wechat_mcp/config.json with {"dashscope_api_key": "sk-..."}
 
 # ── logger ──────────────────────────────────────────────────────────
 logging.basicConfig(
